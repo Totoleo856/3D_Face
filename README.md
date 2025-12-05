@@ -126,7 +126,7 @@ Mode 2 – estimation automatique
 
 Sortie :
 
-```
+```json
 
 {
 
@@ -296,7 +296,7 @@ results\[frame\_id] = {
 
 Format :
 
-```
+```json
 
 {
 
@@ -381,7 +381,7 @@ focal\_mm		Focale réelle du capteur ; désactive l’estimation auto
 
 
 
-```
+```json
 
 output/
 
