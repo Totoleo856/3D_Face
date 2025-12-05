@@ -126,7 +126,7 @@ Mode 2 – estimation automatique
 
 Sortie :
 
-```json
+```
 
 {
 
