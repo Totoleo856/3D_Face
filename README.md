@@ -126,7 +126,7 @@ Mode 2 – estimation automatique
 
 Sortie :
 
-```
+```python
 
 {
 
@@ -385,19 +385,19 @@ focal\_mm		Focale réelle du capteur ; désactive l’estimation auto
 
 output/
 
-&nbsp;  └── YYYY-MM-DD/
+  └── YYYY-MM-DD/
 
-&nbsp;       ├── JSON/
+       ├── JSON/
 
-&nbsp;       │     └── <video\_name>\_landmarks\_camera.json
+       │     └── <video\_name>\_landmarks\_camera.json
 
-&nbsp;       └── OBJ/
+       └── OBJ/
 
-&nbsp;             └── <video\_name>\_frame\_0000.obj
+             └── <video\_name>\_frame\_0000.obj
 
-&nbsp;             └── <video\_name>\_frame\_0001.obj
+             └── <video\_name>\_frame\_0001.obj
 
-&nbsp;             └── ...
+             └── ...
 
 ```
 
