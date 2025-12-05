@@ -16,15 +16,15 @@
 * L’estimation de la pose caméra (intrinsèques + extrinsèques) par solvePnP.
 * La sauvegarde des données sous forme :
 
-&nbsp;	- JSON (landmarks + caméra pour chaque frame)
+	- JSON (landmarks + caméra pour chaque frame)
 
-&nbsp;	- OBJ (nuage de points triangulé par Delaunay)
+	- OBJ (nuage de points triangulé par Delaunay)
 
 * Optionnellement :
 
-&nbsp;	- Fast mode (affichage en temps réel, sans export)
+	- Fast mode (affichage en temps réel, sans export)
 
-&nbsp;	- Fusion de la séquence (désactivé dans ton code)
+	- Fusion de la séquence (désactivé dans ton code)
 
 
 
@@ -240,13 +240,13 @@ Améliore la stabilité.
 
 
 
-&nbsp;	- Filtrage temporel (optionnel)
+	- Filtrage temporel (optionnel)
 
-&nbsp;		- OneEuroFilter
+		- OneEuroFilter
 
-&nbsp;		- Kalman3D
+		- Kalman3D
 
-&nbsp;	Résultat : landmarks stabilisés.
+	Résultat : landmarks stabilisés.
 
 
 
@@ -254,9 +254,9 @@ Améliore la stabilité.
 
 
 
-&nbsp;	- Affiche preview
+	- Affiche preview
 
-&nbsp;	- Pas d’enregistrement
+	- Pas d’enregistrement
 
 
 
@@ -264,9 +264,9 @@ Améliore la stabilité.
 
 
 
-&nbsp;	- solvePnP / solvePnPRefineLM
+	- solvePnP / solvePnPRefineLM
 
-&nbsp;	- retourne K, R, t, rmse
+	- retourne K, R, t, rmse
 
 
 
@@ -280,9 +280,9 @@ Dans une structure Python :
 
 results\[frame\_id] = {
 
-&nbsp;   "landmarks\_px": \[...],
+   "landmarks\_px": \[...],
 
-&nbsp;   "camera": {...}
+   "camera": {...}
 
 }
 
@@ -300,27 +300,27 @@ Format :
 
 {
 
-&nbsp; "0": \[
+ "0": \[
 
-&nbsp;   {
+   {
 
-&nbsp;     "landmarks\_px": \[\[x,y,z], ...],
+     "landmarks\_px": \[\[x,y,z], ...],
 
-&nbsp;     "camera": {
+     "camera": {
 
-&nbsp;       "K": \[...],
+       "K": \[...],
 
-&nbsp;       "R": \[...],
+       "R": \[...],
 
-&nbsp;       "t": \[...],
+       "t": \[...],
 
-&nbsp;       "rmse\_px": ...
+       "rmse\_px": ...
 
-&nbsp;     }
+     }
 
-&nbsp;   }
+   }
 
-&nbsp; ]
+ ]
 
 }
 
