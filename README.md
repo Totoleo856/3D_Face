@@ -130,13 +130,13 @@ Sortie :
 
 {
 
-&nbsp;"K": \[...],
+"K": \[...],
 
-&nbsp;"rvec": \[...],
+"rvec": \[...],
 
-&nbsp;"tvec": \[...],
+"tvec": \[...],
 
-&nbsp;"rmse": ...
+"rmse": ...
 
 }
 
@@ -296,7 +296,7 @@ results\[frame\_id] = {
 
 Format :
 
-```json
+```
 
 {
 
@@ -381,7 +381,7 @@ focal\_mm		Focale réelle du capteur ; désactive l’estimation auto
 
 
 
-```json
+```
 
 output/
 
