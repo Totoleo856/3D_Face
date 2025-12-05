@@ -90,7 +90,7 @@ Calcule l’erreur de reprojection entre :
 
 Objectif : estimer la matrice de la caméra :
 
-'''
+```
 
 K = \[\[fx, 0, cx],
 
@@ -98,7 +98,7 @@ K = \[\[fx, 0, cx],
 
 &nbsp;    \[0, 0, 1]]
 
-'''
+```
 
 
 
