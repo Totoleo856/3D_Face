@@ -92,11 +92,15 @@ Objectif : estimer la matrice de la caméra :
 
 
 
-```K = \[\[fx, 0, cx],
+```
+
+K = \[\[fx, 0, cx],
 
 &nbsp;    \[0, fy, cy],
 
-&nbsp;    \[0, 0, 1]]```
+&nbsp;    \[0, 0, 1]]
+
+```
 
 
 
