@@ -1,7 +1,7 @@
 import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
 import threading
-from processor import process_video_with_callback
+from processor import process_video
 import overlay_generator  # le script séparé
 
 
@@ -33,16 +33,31 @@ def start_processing():
     use_kalman = kalman_var.get()
     min_cutoff = min_cutoff_var.get()
     beta = beta_var.get()
+    use_optical_flow = optical_flow_var.get()
+    optical_flow_threshold = optical_flow_thresh_var.get()
+    focal_mm = focal_mm_var.get()
+    if focal_mm.strip() == "":
+        focal_mm = None
+    else:
+        try:
+            focal_mm = float(focal_mm)
+        except ValueError:
+            messagebox.showwarning("Attention", "La focale doit être un nombre.")
+            return
+
 
     def thread_func():
         try:
-            process_video_with_callback(
+            process_video(
                 video_path, output_folder, progress_callback,
                 fast_mode=fast_mode,
                 use_one_euro=use_one_euro,
                 one_euro_min_cutoff=min_cutoff,
                 one_euro_beta=beta,
-                use_kalman=use_kalman
+                use_kalman=use_kalman,
+                use_optical_flow = use_optical_flow,
+                optical_flow_threshold=optical_flow_threshold,
+                focal_mm=focal_mm
             )
         except Exception as e:
             print(f"Erreur : {e}")
@@ -79,39 +94,49 @@ tk.Label(root, text="Dossier parent:").grid(row=1, column=0, sticky="e")
 output_entry = tk.Entry(root, width=50)
 output_entry.grid(row=1, column=1)
 tk.Button(root, text="Parcourir", command=browse_output_folder).grid(row=1, column=2)
+tk.Label(root, text="Focale réelle (mm, optionnel)").grid(row=2, column=1, sticky="e")
+focal_mm_var = tk.StringVar()
+tk.Entry(root, textvariable=focal_mm_var, width=10).grid(row=2, column=2, sticky="w")
+
 
 # Filters
-one_euro_var = tk.BooleanVar(value=True)
-tk.Checkbutton(root, text="Activer OneEuroFilter", variable=one_euro_var).grid(row=2, column=0, columnspan=2, sticky="w")
+optical_flow_var = tk.BooleanVar(value=True)
+tk.Checkbutton(root, text="Activer Optical Flow Filter :", variable=optical_flow_var).grid(row=2, column=0, columnspan=2, sticky="w")
 
-kalman_var = tk.BooleanVar(value=True)
-tk.Checkbutton(root, text="Activer Kalman Filter", variable=kalman_var).grid(row=3, column=0, columnspan=2, sticky="w")
+tk.Label(root, text="Threshold (px)").grid(row=3, column=0, sticky="e")
+optical_flow_thresh_var = tk.DoubleVar(value=5.0)
+tk.Scale(root, variable=optical_flow_thresh_var, from_=1.0, to=20.0, resolution=0.5, orient="horizontal").grid(row=3, column=1, sticky="we")
 
-fast_mode_var = tk.BooleanVar(value=False)
-tk.Checkbutton(root, text="Mode FAST (preview uniquement)", variable=fast_mode_var).grid(row=4, column=0, columnspan=2, sticky="w")
+
+kalman_var = tk.BooleanVar(value=False)
+tk.Checkbutton(root, text="Activer Kalman Filter", variable=kalman_var).grid(row=4, column=0, columnspan=2, sticky="w")
+
+one_euro_var = tk.BooleanVar(value=False)
+tk.Checkbutton(root, text="Activer OneEuro Filter :", variable=one_euro_var).grid(row=5, column=0, columnspan=2, sticky="w")
 
 # OneEuro sliders
-tk.Label(root, text="OneEuro min_cutoff").grid(row=5, column=0, sticky="e")
+tk.Label(root, text="min_cutoff").grid(row=6, column=0, sticky="e")
 min_cutoff_var = tk.DoubleVar(value=1.0)
-tk.Scale(root, variable=min_cutoff_var, from_=0.0, to=5.0, resolution=0.1, orient="horizontal").grid(row=5, column=1, sticky="we")
+tk.Scale(root, variable=min_cutoff_var, from_=0.0, to=5.0, resolution=0.1, orient="horizontal").grid(row=6, column=1, sticky="we")
 
-tk.Label(root, text="OneEuro beta").grid(row=6, column=0, sticky="e")
+tk.Label(root, text="beta").grid(row=7, column=0, sticky="e")
 beta_var = tk.DoubleVar(value=0.005)
-tk.Scale(root, variable=beta_var, from_=0.0, to=0.05, resolution=0.001, orient="horizontal").grid(row=6, column=1, sticky="we")
+tk.Scale(root, variable=beta_var, from_=0.0, to=0.05, resolution=0.001, orient="horizontal").grid(row=7, column=1, sticky="we")
+
+# FAST Mode
+fast_mode_var = tk.BooleanVar(value=True)
+tk.Checkbutton(root, text="Mode FAST (preview uniquement)", variable=fast_mode_var).grid(row=8, column=0, columnspan=2, sticky="w")
 
 # Launch button
-tk.Button(root, text="Lancer le traitement", command=start_processing, bg="green", fg="white").grid(row=7, column=0, columnspan=3, pady=10)
+tk.Button(root, text="Lancer le traitement", command=start_processing, bg="green", fg="white").grid(row=9, column=0, columnspan=3, pady=10)
 
 # Progress bar
 progress_var = tk.DoubleVar()
 progress_bar = ttk.Progressbar(root, variable=progress_var, maximum=100)
-progress_bar.grid(row=8, column=0, columnspan=3, sticky="we", padx=10)
-
-
-
+progress_bar.grid(row=10, column=0, columnspan=3, sticky="we", padx=10)
 
 # Ajouter le bouton dans le GUI
-tk.Button(root, text="Créer Overlay", command=create_overlay_button_callback, bg="blue", fg="white").grid(row=9, column=0, columnspan=3, pady=10)
+tk.Button(root, text="Créer Overlay", command=create_overlay_button_callback, bg="blue", fg="white").grid(row=11, column=0, columnspan=3, pady=10)
 
 
 root.mainloop()

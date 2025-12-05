@@ -9,6 +9,8 @@ from scipy.spatial import Delaunay
 from datetime import datetime
 from one_euro_filter import OneEuroFilter
 from kalman_filter import Kalman3D
+from fuse_mesh_sequence import fuse_obj_sequence
+
 
 # ================= Camera utils =================
 def reprojection_error(object_points, image_points, rvec, tvec, K, dist_coef=None):
@@ -18,15 +20,40 @@ def reprojection_error(object_points, image_points, rvec, tvec, K, dist_coef=Non
     proj = proj.reshape(-1,2)
     img = image_points.reshape(-1,2)
     diff = img - proj
-    return float(np.sqrt(np.mean(np.sum(diff*diff, axis=1))), diff)
+    return float(np.sqrt(np.mean(np.sum(diff*diff, axis=1)))), diff
 
-def estimate_camera_from_landmarks(landmarks, frame_width, frame_height, fx_grid=(0.6,1.8,30), refine=True):
+def estimate_camera_from_landmarks(
+    landmarks,
+    frame_width,
+    frame_height,
+    fx_grid=(0.6, 1.8, 30),
+    refine=True,
+    focal_mm=None,
+    sensor_width_mm=36
+):
+
     pts = np.array(landmarks, dtype=np.float64)
-    if pts.shape[0] < 6:
+    if pts.shape[0] < 6 and focal_mm is None:
         return None
+
     image_points = pts[:, :2].astype(np.float64)
     object_points = pts.copy().astype(np.float64)
 
+    # --- Si la focale est fournie, ne pas estimer ---
+    if focal_mm is not None:
+        fx = (focal_mm / sensor_width_mm) * frame_width
+        fy = fx
+        cx = frame_width / 2.0
+        cy = frame_height / 2.0
+        K = np.array([[fx, 0, cx],
+                      [0, fy, cy],
+                      [0, 0, 1]], dtype=np.float64)
+        rvec = np.zeros((3, 1), dtype=np.float64)
+        tvec = np.zeros((3, 1), dtype=np.float64)
+        rmse = 0.0
+        return {"K": K, "rvec": rvec, "tvec": tvec, "rmse": rmse}
+
+    # --- Sinon estimation automatique comme avant ---
     min_r, max_r, n_steps = fx_grid
     ratios = np.linspace(min_r, max_r, int(n_steps))
     best = None
@@ -35,11 +62,14 @@ def estimate_camera_from_landmarks(landmarks, frame_width, frame_height, fx_grid
     for r in ratios:
         fx = frame_width * float(r)
         fy = fx
-        cx = frame_width/2.0
-        cy = frame_height/2.0
-        K = np.array([[fx,0,cx],[0,fy,cy],[0,0,1]], dtype=np.float64)
+        cx = frame_width / 2.0
+        cy = frame_height / 2.0
+        K = np.array([[fx, 0, cx],
+                      [0, fy, cy],
+                      [0, 0, 1]], dtype=np.float64)
         try:
-            ok, rvec, tvec = cv2.solvePnP(object_points, image_points, K, None, flags=cv2.SOLVEPNP_ITERATIVE)
+            ok, rvec, tvec = cv2.solvePnP(object_points, image_points, K, None,
+                                           flags=cv2.SOLVEPNP_ITERATIVE)
             if not ok:
                 continue
             rmse, _ = reprojection_error(object_points, image_points, rvec, tvec, K)
@@ -53,6 +83,8 @@ def estimate_camera_from_landmarks(landmarks, frame_width, frame_height, fx_grid
         return None
 
     K, rvec, tvec, rmse = best
+
+    # --- Refinement ---
     if refine:
         try:
             rvec2, tvec2 = cv2.solvePnPRefineLM(object_points, image_points, K, None, rvec, tvec)
@@ -63,6 +95,7 @@ def estimate_camera_from_landmarks(landmarks, frame_width, frame_height, fx_grid
             pass
 
     return {"K": K, "rvec": rvec, "tvec": tvec, "rmse": float(rmse)}
+
 
 # ================= Filter helper =================
 def apply_filters_to_landmarks(raw_landmarks, w, h, one_euro_filters=None, kalman_filters=None):
@@ -83,16 +116,31 @@ def apply_filters_to_landmarks(raw_landmarks, w, h, one_euro_filters=None, kalma
         filtered.append([x, y, z])
     return np.array(filtered)
 
+# ================= Optical Flow helper =================
+def apply_optical_flow(prev_gray, gray, prev_points, mp_points=None, threshold_px=5.0):
+    next_points, status, _ = cv2.calcOpticalFlowPyrLK(prev_gray, gray, prev_points, None,
+                                                     winSize=(15,15), maxLevel=2,
+                                                     criteria=(cv2.TERM_CRITERIA_EPS | cv2.TERM_CRITERIA_COUNT, 10, 0.03))
+    if mp_points is not None:
+        diff = np.linalg.norm(next_points - mp_points, axis=1)
+        mask = diff > threshold_px
+        next_points[mask] = mp_points[mask]
+    return next_points
+
 # ================= Main processor =================
-def process_video_with_callback(
+def process_video(
     video_path,
     output_parent_folder,
     progress_callback=None,
     fast_mode=False,
-    use_one_euro=True,
+    use_one_euro=False,
     one_euro_min_cutoff=1.0,
     one_euro_beta=0.005,
-    use_kalman=True
+    use_kalman=False,
+    use_optical_flow=False,
+    optical_flow_threshold=5.0,
+    focal_mm=None 
+
 ):
     date_folder = datetime.now().strftime("%Y-%m-%d")
     obj_folder = os.path.join(output_parent_folder, date_folder, "OBJ")
@@ -116,21 +164,25 @@ def process_video_with_callback(
     results = {}
     video_name = os.path.splitext(os.path.basename(video_path))[0]
 
-    # --- Initialize filters ---
+    # --- Initialize filters only if enabled ---
     one_euro_filters = None
     if use_one_euro:
         one_euro_filters = [
             [OneEuroFilter(freq=fps, min_cutoff=one_euro_min_cutoff, beta=one_euro_beta) for _ in range(3)]
             for _ in range(468)
         ]
-
     kalman_filters = [Kalman3D() for _ in range(468)] if use_kalman else None
+
+    # --- Initialize Optical Flow ---
+    prev_gray = None
+    prev_points = None
 
     # --- Frame loop ---
     for idx in tqdm(range(num_frames), desc="Traitement vidéo", ncols=80, leave=False):
         ret, frame = cap.read()
         if not ret:
             break
+        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
         rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
         h, w, _ = frame.shape
         out = face_mesh.process(rgb)
@@ -138,31 +190,45 @@ def process_video_with_callback(
 
         if out.multi_face_landmarks:
             face = out.multi_face_landmarks[0]
-            landmarks = apply_filters_to_landmarks(face.landmark, w, h, one_euro_filters, kalman_filters)
+            landmarks_raw = np.array([[lm.x * w, lm.y * h, lm.z * w] for lm in face.landmark], dtype=np.float32)
 
+            # --- Optical Flow ---
+            if use_optical_flow and prev_gray is not None and prev_points is not None:
+                landmarks_raw[:, :2] = apply_optical_flow(prev_gray, gray, prev_points[:, :2].astype(np.float32),
+                                                          landmarks_raw[:, :2].astype(np.float32),     
+                                                          threshold_px=optical_flow_threshold  # <-- ajout
+)
+
+            # --- Update previous frame ---
+            prev_gray = gray.copy()
+            prev_points = landmarks_raw.copy()
+
+            # --- Apply filters ---
+            class DummyLM:
+                def __init__(self, x, y, z):
+                    self.x, self.y, self.z = x/w, y/h, z/w
+            dummy_lms = [DummyLM(*pt) for pt in landmarks_raw]
+            landmarks_filtered = apply_filters_to_landmarks(
+                dummy_lms, w, h,
+                one_euro_filters if use_one_euro else None,
+                kalman_filters if use_kalman else None
+            )
+
+            # --- Fast preview ---
             if fast_mode:
                 preview_frame = frame.copy()
-                for lm in landmarks:
-                    cv2.circle(preview_frame, (int(lm[0]), int(lm[1])), 2, (0,255,0), -1)
+                for lm in landmarks_filtered:
+                    cv2.circle(preview_frame, (int(lm[0]), int(lm[1])), 2, (0, 255, 0), -1)
                 cv2.imshow("FAST Preview", preview_frame)
                 if cv2.waitKey(1) & 0xFF == ord('q'):
                     break
-                results[idx].append({"landmarks_px": landmarks.tolist(), "camera": None})
+                results[idx].append({"landmarks_px": landmarks_filtered.tolist(), "camera": None})
                 if progress_callback:
-                    progress_callback((idx+1)/num_frames*100)
-                continue  # skip OBJ/JSON in fast mode
+                    progress_callback((idx + 1) / num_frames * 100)
+                continue
 
-            # Normal mode
-            pts = np.array(landmarks)
-            if pts.shape[0] >= 3:
-                xy = pts[:, :2]
-                faces = Delaunay(xy).simplices
-                mesh = trimesh.Trimesh(vertices=pts, faces=faces, process=True)
-                mesh.invert()
-                fpath = os.path.join(obj_folder, f"{video_name}_frame_{idx:04d}.obj")
-                mesh.export(fpath)
-
-            cam = estimate_camera_from_landmarks(landmarks, w, h)
+            # --- Camera estimation ---
+            cam = estimate_camera_from_landmarks(landmarks_filtered, w, h,  focal_mm=focal_mm)
             cam_data = None
             if cam is not None:
                 Rmat, _ = cv2.Rodrigues(cam["rvec"])
@@ -172,44 +238,47 @@ def process_video_with_callback(
                     "t": cam["tvec"].reshape(3).tolist(),
                     "rmse_px": cam["rmse"]
                 }
-            results[idx].append({"landmarks_px": landmarks.tolist(), "camera": cam_data})
+
+            results[idx].append({"landmarks_px": landmarks_filtered.tolist(), "camera": cam_data})
         else:
             results[idx].append({"landmarks_px": [], "camera": None})
 
         if progress_callback:
-            progress_callback((idx+1)/num_frames*100)
+            progress_callback((idx + 1) / num_frames * 100)
 
+    # --- Cleanup ---
     cap.release()
+    cv2.destroyAllWindows()
+
     if fast_mode:
-        cv2.destroyAllWindows()
+        return  # Skip JSON/OBJ export
 
-    # Save JSON & Blender script only in normal mode
-    if not fast_mode:
-        json_path = os.path.join(json_folder, f"{video_name}_landmarks_camera.json")
-        with open(json_path, "w") as f:
-            json.dump(results, f)
+    # ========== SAVE JSON ==========
+    json_path = os.path.join(json_folder, f"{video_name}_landmarks_camera.json")
+    with open(json_path, "w") as f:
+        json.dump(results, f)
 
-        obj_files = sorted([f for f in os.listdir(obj_folder) if f.endswith(".obj")])
-        blender_script = os.path.join(output_parent_folder, date_folder, f"{video_name}_blender_anim.py")
-        blender_script_content = f"""
-import bpy
-import os
+    # ========== GENERATE OBJ ==========
+    for frame_id, frame_data in tqdm(results.items(), desc="Création OBJ", ncols=80):
+        rec = frame_data[0]
+        if not rec["landmarks_px"]:
+            continue
+        pts = np.array(rec["landmarks_px"])
+        if pts.shape[0] < 3:
+            continue
+        xy = pts[:, :2]
+        faces = Delaunay(xy).simplices
+        mesh = trimesh.Trimesh(vertices=pts, faces=faces, process=True)
+        mesh.invert()
+        fpath = os.path.join(obj_folder, f"{video_name}_frame_{frame_id:04d}.obj")
+        mesh.export(fpath)
 
-obj_folder = r"{obj_folder}"
-output_fbx = r"{os.path.join(output_parent_folder, date_folder, video_name + '.fbx')}"
+    print("✓ Traitement terminé et OBJ générés")
+        
+    # fuse_obj_sequence(
+    # input_folder = obj_folder,
+    # output_path = os.path.join(output_parent_folder, date_folder, f"{video_name}_fused.obj")
+    # )
+    
+    # print("✓ Static mesh généré")
 
-bpy.ops.wm.read_factory_settings(use_empty=True)
-
-obj_files = {obj_files}
-
-for i, obj_file in enumerate(obj_files):
-    bpy.ops.import_scene.obj(filepath=os.path.join(obj_folder, obj_file))
-    obj = bpy.context.selected_objects[0]
-    obj.keyframe_insert(data_path="location", frame=i+1)
-    obj.keyframe_insert(data_path="scale", frame=i+1)
-    obj.keyframe_insert(data_path="rotation_euler", frame=i+1)
-
-bpy.ops.export_scene.fbx(filepath=output_fbx, bake_space_transform=True)
-"""
-        with open(blender_script, "w") as f:
-            f.write(blender_script_content)
