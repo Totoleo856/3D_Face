@@ -8,7 +8,7 @@ class Kalman3D:
         self.P = np.eye(3)          # covariance
         self.X = np.zeros(3)        # état initial
         self.Q = process_noise * np.eye(3)
-        self.R = measurement_noise * np.eye(3)
+        self.R = measurement_noise * np.eye(3)kj
 
     def apply(self, measurement):
         """
