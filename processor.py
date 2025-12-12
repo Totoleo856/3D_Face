@@ -158,7 +158,9 @@ def process_video(
     use_kalman=False,
     use_optical_flow=False,
     optical_flow_threshold=5.0,
-    focal_mm=None 
+    focal_mm=None,
+    SKIP_INITIAL_FRAMES = 5
+
 ):
     date_folder = datetime.now().strftime("%Y-%m-%d")
     obj_folder = os.path.join(output_parent_folder, date_folder, "OBJ")
@@ -210,6 +212,15 @@ def process_video(
         if out.multi_face_landmarks:
             face = out.multi_face_landmarks[0]
             landmarks_raw = np.array([[lm.x * w, lm.y * h, lm.z * w] for lm in face.landmark], dtype=np.float32)
+
+     # --- Sauter les premières frames ---
+            if idx < SKIP_INITIAL_FRAMES:
+                results[idx].append({"landmarks_px": landmarks_raw.tolist(), "camera": None})
+                prev_gray = gray.copy()
+                prev_points = landmarks_raw.copy()
+                if progress_callback:
+                    progress_callback((idx + 1) / num_frames * 100)
+                continue  # passe à la frame suivante
 
             if use_optical_flow and prev_gray is not None and prev_points is not None:
                 landmarks_raw[:, :2] = apply_optical_flow(prev_gray, gray, prev_points[:, :2].astype(np.float32),
