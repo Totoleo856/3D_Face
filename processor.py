@@ -1,3 +1,4 @@
+
 import os
 import cv2
 import mediapipe as mp
@@ -12,6 +13,7 @@ import subprocess
 # Mediapipe tessellation
 from mediapipe.python.solutions.face_mesh_connections import FACEMESH_TESSELATION
 from pathlib import Path
+
 
 # ================= Camera utils =================
 def reprojection_error(object_points, image_points, rvec, tvec, K, dist_coef=None):
@@ -36,10 +38,10 @@ def estimate_camera_from_landmarks(
     pts = np.array(landmarks, dtype=np.float64)
     if pts.shape[0] < 6 and focal_mm is None:
         return None
-
     image_points = pts[:, :2].astype(np.float64)
     object_points = pts.copy().astype(np.float64)
 
+    # Known focal: compute extrinsics
     if focal_mm is not None:
         fx = (focal_mm / sensor_width_mm) * frame_width
         fy = fx
@@ -55,6 +57,7 @@ def estimate_camera_from_landmarks(
             pass
         return None
 
+    # Grid search focal
     min_r, max_r, n_steps = fx_grid
     ratios = np.linspace(min_r, max_r, int(n_steps))
     best = None
@@ -75,11 +78,10 @@ def estimate_camera_from_landmarks(
                 best = (K.copy(), rvec.copy(), tvec.copy(), rmse)
         except Exception:
             continue
-
     if best is None:
         return None
-
     K, rvec, tvec, rmse = best
+
     if refine:
         try:
             rvec2, tvec2 = cv2.solvePnPRefineLM(object_points, image_points, K, None, rvec, tvec)
@@ -324,8 +326,8 @@ def process_video(
         mesh.export(fpath)
     print("✓ Traitement terminé et OBJ générés")
 
-    # ========== EXPORT FBX (via Blender, sans importer bpy ici) ==========
-try:
+    # ========== EXPORT FBX (via Blender) ==========
+    try:
         obj_folder = os.path.join(output_parent_folder, date_folder, "OBJ")
         fbx_path = os.path.join(output_parent_folder, date_folder, f"{video_name}_animated.fbx")
         print("→ Export FBX via Blender…")
