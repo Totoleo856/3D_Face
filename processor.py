@@ -13,6 +13,7 @@ import subprocess
 
 # Mediapipe tessellation
 from mediapipe.python.solutions.face_mesh_connections import FACEMESH_TESSELATION
+from pathlib import Path
 
 # ================= Camera utils =================
 def reprojection_error(object_points, image_points, rvec, tvec, K, dist_coef=None):
@@ -41,18 +42,23 @@ def estimate_camera_from_landmarks(
     image_points = pts[:, :2].astype(np.float64)
     object_points = pts.copy().astype(np.float64)
 
-    if focal_mm is not None:
-        fx = (focal_mm / sensor_width_mm) * frame_width
-        fy = fx
-        cx = frame_width / 2.0
-        cy = frame_height / 2.0
-        K = np.array([[fx, 0, cx],
-                      [0, fy, cy],
-                      [0, 0, 1]], dtype=np.float64)
-        rvec = np.zeros((3, 1), dtype=np.float64)
-        tvec = np.zeros((3, 1), dtype=np.float64)
-        rmse = 0.0
-        return {"K": K, "rvec": rvec, "tvec": tvec, "rmse": rmse}
+    if focal_mm is not None: 
+        fx = (focal_mm / sensor_width_mm) * frame_width 
+        fy = fx 
+        cx = frame_width / 2.0 
+        cy = frame_height / 2.0 
+        K = np.array([[fx, 0, cx], 
+                      [0, fy, cy], 
+                      [0, 0, 1]], dtype=np.float64) 
+        try:
+            ok, rvec, tvec = cv2.solvePnP(object_points, image_points, K, None, flags=cv2.SOLVEPNP_ITERATIVE)
+
+            if ok:
+                rmse, _ = reprojection_error(object_points, image_points, rvec, tvec, K)
+                return {"K": K, "rvec": rvec, "tvec": tvec, "rmse": float(rmse)}
+        except Exception:
+            pass
+        return None
 
     min_r, max_r, n_steps = fx_grid
     ratios = np.linspace(min_r, max_r, int(n_steps))
@@ -117,15 +123,12 @@ def apply_filters_to_landmarks(raw_landmarks, w, h, one_euro_filters=None, kalma
 
 
 # ================= Optical Flow helper =================
-def apply_optical_flow(prev_gray, gray, prev_points, mp_points=None, threshold_px=5.0):
-    next_points, status, _ = cv2.calcOpticalFlowPyrLK(prev_gray, gray, prev_points, None,
-                                                     winSize=(15,15), maxLevel=2,
-                                                     criteria=(cv2.TERM_CRITERIA_EPS | cv2.TERM_CRITERIA_COUNT, 10, 0.03))
-    if mp_points is not None:
-        diff = np.linalg.norm(next_points - mp_points, axis=1)
-        mask = diff > threshold_px
-        next_points[mask] = mp_points[mask]
-    return next_points
+def apply_optical_flow(prev_gray, gray, prev_points, mp_points=None, threshold_px=5.0): 
+    next_points, status, _ = cv2.calcOpticalFlowPyrLK(
+        prev_gray, gray, prev_points, None,
+        winSize=(15, 15), maxLevel=2,
+        criteria=(cv2.TERM_CRITERIA_EPS | cv2.TERM_CRITERIA_COUNT, 10, 0.03)
+    ) 
 
 
 # ================= Build triangles from Mediapipe tessellation =================
@@ -199,8 +202,15 @@ def process_video(
     faces_mp = build_triangles_from_tesselation(FACEMESH_TESSELATION)
 
     # --- Frame loop ---
-    for idx in tqdm(range(num_frames), desc="Traitement vidéo", ncols=80, leave=False):
+
+    class DummyLM:
+        def __init__(self, x, y, z):
+            self.x, self.y, self.z = x/w, y/h, z/w
+
+    for idx in tqdm(range(num_frames), desc="Traitement vidéo", ncols=80, leave=False): 
+
         ret, frame = cap.read()
+        
         if not ret:
             break
         gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
@@ -229,10 +239,7 @@ def process_video(
 
             prev_gray = gray.copy()
             prev_points = landmarks_raw.copy()
-
-            class DummyLM:
-                def __init__(self, x, y, z):
-                    self.x, self.y, self.z = x/w, y/h, z/w
+            
             dummy_lms = [DummyLM(*pt) for pt in landmarks_raw]
             landmarks_filtered = apply_filters_to_landmarks(
                 dummy_lms, w, h,
@@ -282,10 +289,12 @@ def process_video(
         json.dump(results, f)
 
     # ========== GENERATE OBJ (Mediapipe faces) ==========
-    for frame_id, frame_data in tqdm(results.items(), desc="Création OBJ", ncols=80):
-        rec = frame_data[0]
-        if not rec["landmarks_px"]:
-            continue
+
+    for frame_id, frame_data in tqdm(results.items(), desc="Création OBJ", ncols=80): 
+        rec = next((r for r in reversed(frame_data) if r["landmarks_px"]), None)
+        if not rec: 
+            continue 
+
         pts = np.array(rec["landmarks_px"], dtype=np.float32)
         mesh = trimesh.Trimesh(
             vertices=pts,
@@ -298,23 +307,23 @@ def process_video(
     print("✓ Traitement terminé et OBJ générés")
 
     # ========== EXPORT FBX (via Blender, sans importer bpy ici) ==========
+    
     try:
-        obj_folder = os.path.join(output_parent_folder, date_folder, "OBJ")
-        fbx_path = os.path.join(output_parent_folder, date_folder, f"{video_name}_animated.fbx")
-
-        print("→ Export FBX via Blender…")
-
+        obj_folder = os.path.join(output_parent_folder, date_folder, "OBJ") 
+        fbx_path = os.path.join(output_parent_folder, date_folder, f"{video_name}_animated.fbx") 
+        print("→ Export FBX via Blender…") 
+        blender_exec = os.environ.get("BLENDER_PATH", "blender")
+        script_abs = str(Path(__file__).parent / "export_fbx.py")
         subprocess.run([
-            r"C:\Program Files\Blender Foundation\Blender 4.4\blender.exe",
+            blender_exec,
             "--background",
-            "--python", "export_fbx.py",
+            "--python", script_abs,
             "--",
             "--obj_folder", obj_folder,
             "--fbx_path", fbx_path,
             "--fps", str(int(fps))
         ], check=True)
-
-        print("✓ FBX animé exporté :", fbx_path)
-
-    except Exception as e:
+        print("✓ FBX animé exporté :", fbx_path) 
+    except Exception as e: 
         print("⚠ Erreur export FBX :", e)
+        

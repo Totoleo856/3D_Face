@@ -1,6 +1,7 @@
 import bpy
 import sys
 import os
+import re
 
 # ------------------------------------------------------------
 # Parse arguments passed after "--"
@@ -28,6 +29,11 @@ if obj_folder is None or fbx_path is None:
 print("OBJ folder :", obj_folder)
 print("Output FBX :", fbx_path)
 
+out_dir = os.path.dirname(fbx_path)
+if out_dir and not os.path.isdir(out_dir):
+    os.makedirs(out_dir, exist_ok=True)
+
+
 # ------------------------------------------------------------
 # Clean scene
 # ------------------------------------------------------------
@@ -36,11 +42,12 @@ bpy.ops.wm.read_factory_settings(use_empty=True)
 # ------------------------------------------------------------
 # Collect OBJ files
 # ------------------------------------------------------------
-obj_files = sorted([
-    os.path.join(obj_folder, f)
-    for f in os.listdir(obj_folder)
-    if f.lower().endswith(".obj")
-])
+
+def _natkey(s: str):
+    return [int(t) if t.isdigit() else t.lower() for t in re.findall(r'\d+|\D+', s)]
+obj_files = [f for f in os.listdir(obj_folder) if f.lower().endswith(".obj")]
+obj_files = sorted(obj_files, key=_natkey)
+obj_files = [os.path.join(obj_folder, f) for f in obj_files]
 
 if not obj_files:
     print("❌ ERROR: No OBJ files found.")
@@ -71,6 +78,12 @@ for i, filepath in enumerate(obj_files[1:], start=1):
     bpy.ops.wm.obj_import(filepath=filepath)
     imported = bpy.context.selected_objects[0]
 
+# Safety: same vertex count
+    if len(imported.data.vertices) != len(obj.data.vertices):
+        print(f"❌ ERROR: Vertex count mismatch on {filepath}")
+        bpy.data.objects.remove(imported, do_unlink=True)
+        sys.exit(1)
+
     # Copy vertices into a new shape key
     key = obj.shape_key_add(name=f"frame_{i:04d}")
 
@@ -85,21 +98,25 @@ print("✔ Shape keys generated.")
 # ------------------------------------------------------------
 # Animate shape keys (1 key per frame)
 # ------------------------------------------------------------
+
 scene = bpy.context.scene
 scene.frame_start = 1
 scene.frame_end = len(obj_files)
 scene.render.fps = fps
+prev_name = None
 
 for i in range(len(obj_files)):
     key_name = f"frame_{i:04d}" if i != 0 else "Basis"
-    if key_name in obj.data.shape_keys.key_blocks:
-
-        for k in obj.data.shape_keys.key_blocks:
-            k.value = 0
-            k.keyframe_insert("value", frame=i + 1)
-
-        obj.data.shape_keys.key_blocks[key_name].value = 1.0
-        obj.data.shape_keys.key_blocks[key_name].keyframe_insert("value", frame=i + 1)
+    kb = obj.data.shape_keys.key_blocks.get(key_name)
+    if kb:
+        kb.value = 1.0
+        kb.keyframe_insert("value", frame=i + 1)
+    if prev_name:
+        prev = obj.data.shape_keys.key_blocks.get(prev_name)
+        if prev:
+            prev.value = 0.0
+            prev.keyframe_insert("value", frame=i + 1)
+    prev_name = key_name
 
 print("✔ Animation created.")
 
@@ -112,7 +129,7 @@ bpy.ops.export_scene.fbx(
     use_selection=False,
     add_leaf_bones=False,
     bake_space_transform=False,
-    apply_scale_options='FBX_SCALE_ALL',
+    # apply_scale_options='FBX_SCALE_ALL',
     object_types={'MESH'},
     bake_anim=True,
     bake_anim_use_all_bones=False,

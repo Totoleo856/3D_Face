@@ -105,7 +105,7 @@ def fuse_obj_sequence(
 
 # ================== Test ==================
 if __name__ == "__main__":
-    fuse_obj_sequence_alternative(
+    fuse_obj_sequence(
         input_folder="samples/objs/",
         output_path="output/fused_face_bpa.obj",
         samples_per_mesh=5000,
