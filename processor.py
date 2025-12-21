@@ -1,4 +1,3 @@
-
 import os
 import cv2
 import mediapipe as mp
@@ -10,7 +9,6 @@ from datetime import datetime
 from one_euro_filter import OneEuroFilter
 from kalman_filter import Kalman3D
 import subprocess
-# Mediapipe tessellation
 from mediapipe.python.solutions.face_mesh_connections import FACEMESH_TESSELATION
 from pathlib import Path
 
@@ -38,6 +36,7 @@ def estimate_camera_from_landmarks(
     pts = np.array(landmarks, dtype=np.float64)
     if pts.shape[0] < 6 and focal_mm is None:
         return None
+
     image_points = pts[:, :2].astype(np.float64)
     object_points = pts.copy().astype(np.float64)
 
@@ -57,7 +56,7 @@ def estimate_camera_from_landmarks(
             pass
         return None
 
-    # Grid search focal
+    # Grid search on focal
     min_r, max_r, n_steps = fx_grid
     ratios = np.linspace(min_r, max_r, int(n_steps))
     best = None
@@ -78,10 +77,11 @@ def estimate_camera_from_landmarks(
                 best = (K.copy(), rvec.copy(), tvec.copy(), rmse)
         except Exception:
             continue
+
     if best is None:
         return None
-    K, rvec, tvec, rmse = best
 
+    K, rvec, tvec, rmse = best
     if refine:
         try:
             rvec2, tvec2 = cv2.solvePnPRefineLM(object_points, image_points, K, None, rvec, tvec)
@@ -117,8 +117,11 @@ def apply_optical_flow(prev_gray, gray, prev_points, mp_points=None, threshold_p
         winSize=(15, 15), maxLevel=2,
         criteria=(cv2.TERM_CRITERIA_EPS | cv2.TERM_CRITERIA_COUNT, 10, 0.03)
     )
+    next_points = next_points.reshape(-1, 2)
     mask = status.reshape(-1).astype(bool)
+
     if mp_points is not None:
+        mp_points = mp_points.reshape(-1, 2)
         # Remplacer les tracks échoués par MediaPipe
         next_points[~mask] = mp_points[~mask]
         # Remplacer si trop différent
@@ -240,7 +243,7 @@ def process_video(
                 prev_points = landmarks_raw.copy()
                 if progress_callback:
                     progress_callback((idx + 1) / num_frames * 100)
-                continue  # passe à la frame suivante
+                continue
 
             if use_optical_flow and prev_gray is not None and prev_points is not None:
                 landmarks_raw[:, :2] = apply_optical_flow(
@@ -334,10 +337,10 @@ def process_video(
         blender_exec = os.environ.get("BLENDER_PATH")
         if not blender_exec:
             candidates = [
-                r"C:\Program Files\Blender Foundation\Blender 4.4\blender.exe",
-                r"C:\Program Files\Blender Foundation\Blender 4.3\blender.exe",
-                r"C:\Program Files\Blender Foundation\Blender 4.2\blender.exe",
-                r"C:\Program Files\Blender Foundation\Blender 4.1\blender.exe",
+                r"C:\\Program Files\\Blender Foundation\\Blender 4.4\\blender.exe",
+                r"C:\\Program Files\\Blender Foundation\\Blender 4.3\\blender.exe",
+                r"C:\\Program Files\\Blender Foundation\\Blender 4.2\\blender.exe",
+                r"C:\\Program Files\\Blender Foundation\\Blender 4.1\\blender.exe",
             ]
             blender_exec = next((p for p in candidates if os.path.isfile(p)), "blender")
         script_abs = str(Path(__file__).parent / "export_fbx.py")
@@ -351,4 +354,5 @@ def process_video(
             "--fps", str(int(fps)),
         ], check=True)
         print("✓ FBX animé exporté :", fbx_path)
-     print("⚠ Erreur export FBX :", e)
+    except Exception as e:
+        print("⚠ Erreur export FBX :", e)
