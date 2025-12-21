@@ -10,7 +10,7 @@ class Kalman3D:
         self.Q = process_noise * np.eye(3)
         self.R = measurement_noise * np.eye(3)
 
-    def apply(self, measurement):
+    def apply(self, measurement):fg
         """
         Applique le filtre Kalman sur la mesure 3D.
         """
