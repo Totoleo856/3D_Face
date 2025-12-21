@@ -43,8 +43,10 @@ bpy.ops.wm.read_factory_settings(use_empty=True)
 # Collect OBJ files
 # ------------------------------------------------------------
 
+
 def _natkey(s: str):
-    return [int(t) if t.isdigit() else t.lower() for t in re.findall(r'\d+|\D+', s)]
+    return [int(t) if t.isdigit() else t.lower()
+            for t in re.findall(r'\d+|\D+', s)]
 obj_files = [f for f in os.listdir(obj_folder) if f.lower().endswith(".obj")]
 obj_files = sorted(obj_files, key=_natkey)
 obj_files = [os.path.join(obj_folder, f) for f in obj_files]
