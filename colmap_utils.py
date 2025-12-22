@@ -5,7 +5,6 @@ import subprocess
 import json
 import numpy as np
 
-
 def extract_frames_from_video(video_path: str, frames_folder: str, step: int = 1) -> int:
     """Extrait des images d'une vidéo pour COLMAP.
     Args:
@@ -60,11 +59,14 @@ def run_colmap_pipeline(
         colmap_path = os.environ.get("COLMAP_PATH", "colmap")
 
     # 1) Feature extraction
-    subprocess.run([
-        colmap_path, "feature_extractor",
-        "--database_path", db_path,
-        "--image_path", frames_folder,
-    ], check=True)
+    try:
+        subprocess.run([
+            colmap_path, "feature_extractor",
+            "--database_path", db_path,
+            "--image_path", frames_folder,
+        ], check=True)
+    except FileNotFoundError:
+        raise RuntimeError("COLMAP introuvable. Définis $COLMAP_PATH vers colmap.bat/exe.")
 
     # 2) Matching
     if matcher.lower() == "sequential":
@@ -86,11 +88,17 @@ def run_colmap_pipeline(
         "--output_path", sparse_folder,
     ], check=True)
 
-    # 4) Convert model to JSON
-    # On suppose que le modèle reconstruit principal est dans sparse/0
+    # 4) Convert model to JSON (handle model folder)
+    model_root = os.path.join(sparse_folder, "0")
+    if not os.path.isdir(model_root):
+        subs = [d for d in sorted(os.listdir(sparse_folder)) if os.path.isdir(os.path.join(sparse_folder, d))]
+        if not subs:
+            raise RuntimeError("Aucun modèle COLMAP produit.")
+        model_root = os.path.join(sparse_folder, subs[0])
+
     subprocess.run([
         colmap_path, "model_converter",
-        "--input_path", os.path.join(sparse_folder, "0"),
+        "--input_path", model_root,
         "--output_path", sparse_json,
         "--output_type", "JSON",
     ], check=True)

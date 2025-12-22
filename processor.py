@@ -11,7 +11,7 @@ from kalman_filter import Kalman3D
 import subprocess
 from mediapipe.python.solutions.face_mesh_connections import FACEMESH_TESSELATION
 from pathlib import Path
-
+import shutil
 
 # ================= Camera utils =================
 def reprojection_error(object_points, image_points, rvec, tvec, K, dist_coef=None):
@@ -36,7 +36,6 @@ def estimate_camera_from_landmarks(
     pts = np.array(landmarks, dtype=np.float64)
     if pts.shape[0] < 6 and focal_mm is None:
         return None
-
     image_points = pts[:, :2].astype(np.float64)
     object_points = pts.copy().astype(np.float64)
 
@@ -77,11 +76,10 @@ def estimate_camera_from_landmarks(
                 best = (K.copy(), rvec.copy(), tvec.copy(), rmse)
         except Exception:
             continue
-
     if best is None:
         return None
-
     K, rvec, tvec, rmse = best
+
     if refine:
         try:
             rvec2, tvec2 = cv2.solvePnPRefineLM(object_points, image_points, K, None, rvec, tvec)
@@ -119,12 +117,11 @@ def apply_optical_flow(prev_gray, gray, prev_points, mp_points=None, threshold_p
     )
     next_points = next_points.reshape(-1, 2)
     mask = status.reshape(-1).astype(bool)
-
     if mp_points is not None:
         mp_points = mp_points.reshape(-1, 2)
-        # Remplacer les tracks échoués par MediaPipe
+        # replace failed tracks with MediaPipe points
         next_points[~mask] = mp_points[~mask]
-        # Remplacer si trop différent
+        # replace if deviation too large
         diff = np.linalg.norm(next_points - mp_points, axis=1)
         replace = (~mask) | (diff > threshold_px)
         next_points[replace] = mp_points[replace]
@@ -160,7 +157,6 @@ def process_video(
     use_optical_flow=False,
     optical_flow_threshold=5.0,
     focal_mm=None,
-    
     # ---- COLMAP options ----
     use_colmap=True,
     colmap_step=1,
@@ -209,13 +205,20 @@ def process_video(
     # ---- COLMAP (optionnel) : extraction frames + SfM ----
     colmap_poses = {}
     if use_colmap:
+        # detect COLMAP binary
+        colmap_exec = os.environ.get("COLMAP_PATH", "colmap")
+        if not (shutil.which(colmap_exec) or os.path.isfile(colmap_exec)):
+            raise RuntimeError("COLMAP introuvable. Définis $COLMAP_PATH vers colmap.bat/exe.")
         from colmap_utils import extract_frames_from_video, run_colmap_pipeline
         frames_folder = os.path.join(output_parent_folder, date_folder, "FRAMES")
         saved = extract_frames_from_video(video_path, frames_folder, step=colmap_step)
         colmap_out = os.path.join(output_parent_folder, date_folder, "COLMAP")
-        colmap_poses = run_colmap_pipeline(frames_folder, colmap_out,
-                                           colmap_path=os.environ.get("COLMAP_PATH", "colmap"),
-                                           matcher=colmap_matcher)
+        colmap_poses = run_colmap_pipeline(
+            frames_folder,
+            colmap_out,
+            colmap_path=colmap_exec,
+            matcher=colmap_matcher,
+        )
 
     # --- Frame loop ---
     for idx in tqdm(range(num_frames), desc="Traitement vidéo", ncols=80, leave=False):
@@ -227,7 +230,7 @@ def process_video(
         h, w, _ = frame.shape
         out = face_mesh.process(rgb)
 
-        # --- dt dynamique (priorité POS_MSEC, sinon index/fps)
+        # --- dynamic dt based on POS_MSEC (fallback to fps)
         curr_msec = cap.get(cv2.CAP_PROP_POS_MSEC)
         if prev_msec is not None and np.isfinite(curr_msec):
             dt = max(1e-6, (curr_msec - prev_msec) * 1e-3)
@@ -236,7 +239,7 @@ def process_video(
             dt = 1.0 / fps if idx == 0 else max(1e-6, (curr_idx - (idx - 1)) / fps)
         prev_msec = curr_msec
 
-        # --- OneEuro: ajuster la fréquence (1/dt)
+        # --- OneEuro: adjust frequency (1/dt)
         if use_one_euro and one_euro_filters is not None:
             freq_dyn = 1.0 / dt
             for triplet in one_euro_filters:
@@ -244,7 +247,7 @@ def process_video(
                 triplet[1].freq = freq_dyn
                 triplet[2].freq = freq_dyn
 
-        # --- Optical flow: seuil dynamique borné
+        # --- Optical flow: dynamic threshold (bounded)
         thresh_dyn = np.clip(optical_flow_threshold * (dt * fps), 0.5 * optical_flow_threshold, 2.0 * optical_flow_threshold)
 
         results[idx] = []
@@ -252,7 +255,7 @@ def process_video(
             face = out.multi_face_landmarks[0]
             landmarks_raw = np.array([[lm.x * w, lm.y * h, lm.z * w] for lm in face.landmark], dtype=np.float32)
 
-            # --- Sauter les premières frames ---
+            # --- Skip initial frames ---
             if idx < SKIP_INITIAL_FRAMES:
                 results[idx].append({"landmarks_px": landmarks_raw.tolist(), "camera": None})
                 prev_gray = gray.copy()
@@ -272,7 +275,7 @@ def process_video(
             prev_gray = gray.copy()
             prev_points = landmarks_raw.copy()
 
-            # Normaliser pour OneEuro (landmarks au format MediaPipe-like)
+            # Normalize for OneEuro (MediaPipe-like)
             class DummyLM:
                 def __init__(self, x, y, z, w, h):
                     self.x = x / w
@@ -303,7 +306,7 @@ def process_video(
                     progress_callback((idx + 1) / num_frames * 100)
                 continue
 
-            # ---- Pose caméra : COLMAP prioritaire s'il existe ----
+            # ---- Camera pose: COLMAP first ----
             if use_colmap and idx in colmap_poses:
                 pose = colmap_poses[idx]
                 cam_data = {
@@ -323,7 +326,6 @@ def process_video(
                         "t": cam["tvec"].reshape(3).tolist(),
                         "rmse_px": cam["rmse"],
                     }
-
             results[idx].append({"landmarks_px": landmarks_filtered.tolist(), "camera": cam_data})
         else:
             results[idx].append({"landmarks_px": [], "camera": None})
