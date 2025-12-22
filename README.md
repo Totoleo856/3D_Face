@@ -1,7 +1,6 @@
 # 📘 Documentation Technique – Pipeline de Reconstruction Faciale 3D \& Track Camera
 
 
-
 ## 📌 1. Objectif du script
 
 
