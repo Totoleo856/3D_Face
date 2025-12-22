@@ -23,7 +23,7 @@ def extract_frames_from_video(video_path, frames_folder, step=1):
     cap.release()
     return saved
 
-def run_colmap_pipeline(frames_folder, output_folder, colmap_path="colmap"):
+def run_colmap_pipeline(frames_folder, output_folder, colmap_path=None, matcher="exhaustive"):
     """Lance COLMAP pour générer la reconstruction et les poses JSON."""
     os.makedirs(output_folder, exist_ok=True)
     db_path = os.path.join(output_folder, "database.db")
@@ -33,6 +33,10 @@ def run_colmap_pipeline(frames_folder, output_folder, colmap_path="colmap"):
     os.makedirs(sparse_folder, exist_ok=True)
     os.makedirs(sparse_json, exist_ok=True)
     
+    if colmap_path is None:
+        import os
+        colmap_path = os.environ.get("COLMAP_PATH", "colmap")
+
     # Feature extraction
     subprocess.run([
         colmap_path, "feature_extractor",
@@ -40,11 +44,15 @@ def run_colmap_pipeline(frames_folder, output_folder, colmap_path="colmap"):
         "--image_path", frames_folder
     ], check=True)
     
-    # Feature matching
-    subprocess.run([
-        colmap_path, "exhaustive_matcher",
-        "--database_path", db_path
-    ], check=True)
+    
+    # Feature matching (exhaustive ou sequential pour vidéo)
+    if matcher == "sequential":
+        subprocess.run([colmap_path, "sequential_matcher",
+                        "--database_path", db_path], check=True)
+    else:
+        subprocess.run([colmap_path, "exhaustive_matcher",
+                        "--database_path", db_path], check=True)
+
     
     # Structure-from-Motion
     subprocess.run([

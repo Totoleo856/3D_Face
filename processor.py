@@ -160,6 +160,11 @@ def process_video(
     use_optical_flow=False,
     optical_flow_threshold=5.0,
     focal_mm=None,
+    
+    # ---- COLMAP options ----
+    use_colmap=True,
+    colmap_step=1,
+    colmap_matcher="sequential",
     SKIP_INITIAL_FRAMES=5,
 ):
     date_folder = datetime.now().strftime("%Y-%m-%d")
@@ -200,6 +205,17 @@ def process_video(
 
     # Build Mediapipe faces once
     faces_mp = build_triangles_from_tesselation(FACEMESH_TESSELATION)
+
+    # ---- COLMAP (optionnel) : extraction frames + SfM ----
+    colmap_poses = {}
+    if use_colmap:
+        from colmap_utils import extract_frames_from_video, run_colmap_pipeline
+        frames_folder = os.path.join(output_parent_folder, date_folder, "FRAMES")
+        saved = extract_frames_from_video(video_path, frames_folder, step=colmap_step)
+        colmap_out = os.path.join(output_parent_folder, date_folder, "COLMAP")
+        colmap_poses = run_colmap_pipeline(frames_folder, colmap_out,
+                                           colmap_path=os.environ.get("COLMAP_PATH", "colmap"),
+                                           matcher=colmap_matcher)
 
     # --- Frame loop ---
     for idx in tqdm(range(num_frames), desc="Traitement vidéo", ncols=80, leave=False):
@@ -287,16 +303,27 @@ def process_video(
                     progress_callback((idx + 1) / num_frames * 100)
                 continue
 
-            cam = estimate_camera_from_landmarks(landmarks_filtered, w, h, focal_mm=focal_mm)
-            cam_data = None
-            if cam is not None:
-                Rmat, _ = cv2.Rodrigues(cam["rvec"])
+            # ---- Pose caméra : COLMAP prioritaire s'il existe ----
+            if use_colmap and idx in colmap_poses:
+                pose = colmap_poses[idx]
                 cam_data = {
-                    "K": cam["K"].tolist(),
-                    "R": Rmat.tolist(),
-                    "t": cam["tvec"].reshape(3).tolist(),
-                    "rmse_px": cam["rmse"],
+                    "K": pose["K"].tolist(),
+                    "R": pose["R"].tolist(),
+                    "t": pose["t"].reshape(3).tolist(),
+                    "rmse_px": None,
                 }
+            else:
+                cam = estimate_camera_from_landmarks(landmarks_filtered, w, h, focal_mm=focal_mm)
+                cam_data = None
+                if cam is not None:
+                    Rmat, _ = cv2.Rodrigues(cam["rvec"])
+                    cam_data = {
+                        "K": cam["K"].tolist(),
+                        "R": Rmat.tolist(),
+                        "t": cam["tvec"].reshape(3).tolist(),
+                        "rmse_px": cam["rmse"],
+                    }
+
             results[idx].append({"landmarks_px": landmarks_filtered.tolist(), "camera": cam_data})
         else:
             results[idx].append({"landmarks_px": [], "camera": None})
