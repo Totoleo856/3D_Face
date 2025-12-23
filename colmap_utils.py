@@ -125,12 +125,17 @@ def run_colmap_pipeline(
     if colmap_path is None:
         colmap_path = os.environ.get("COLMAP_PATH", "colmap")
 
-    # 1) Feature extraction
+    # 1) Feature extraction (plus de features pour robustesse)
     try:
         cmd = [
             colmap_path, "feature_extractor",
             "--database_path", db_path,
             "--image_path", frames_folder,
+            "--SiftExtraction.max_num_features", "8000",
+            "--SiftExtraction.max_image_size", "4000",
+            "--SiftExtraction.use_gpu", "1",
+         ]
+
         ]
         # Vidéo: une seule caméra (intrinsics partagés) peut aider
         if relax_params:
@@ -140,16 +145,14 @@ def run_colmap_pipeline(
         raise RuntimeError("COLMAP introuvable. Définis $COLMAP_PATH vers colmap.bat/exe.")
 
     # 2) Matching
+
     if matcher.lower() == "sequential":
         cmd = [colmap_path, "sequential_matcher", "--database_path", db_path]
-        if relax_params:
-            cmd += ["--SiftMatching.guided_matching", "1"]
         subprocess.run(cmd, check=True)
     else:
         cmd = [colmap_path, "exhaustive_matcher", "--database_path", db_path]
-        if relax_params:
-            cmd += ["--SiftMatching.guided_matching", "1"]
         subprocess.run(cmd, check=True)
+
 
     # 3) Mapper (Sparse SfM)
     cmd = [

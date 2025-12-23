@@ -4,6 +4,9 @@ import threading
 from processor import process_video
 import overlay_generator  # le script séparé
 
+import os
+os.environ["COLMAP_PATH"] = r"C:\Users\Dev\Desktop\Test7\colmap-x64-windows-cuda\COLMAP.bat"
+
 
 def browse_video():
     path = filedialog.askopenfilename(filetypes=[("Video files", "*.mp4;*.mov;*.avi")])
