@@ -134,8 +134,6 @@ def run_colmap_pipeline(
             "--SiftExtraction.max_num_features", "8000",
             "--SiftExtraction.max_image_size", "4000",
             "--SiftExtraction.use_gpu", "1",
-         ]
-
         ]
         # Vidéo: une seule caméra (intrinsics partagés) peut aider
         if relax_params:
