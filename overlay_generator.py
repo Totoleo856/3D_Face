@@ -36,6 +36,8 @@ def generate_overlay(video_path, output_parent_folder):
         data = json.load(f)
 
     # --- Parcourir frames ---
+    tri = None
+    
     for idx in tqdm(range(num_frames), desc="Création Overlay", ncols=80):
         ret, frame = cap.read()
         if not ret:
@@ -45,17 +47,17 @@ def generate_overlay(video_path, output_parent_folder):
         frame_data = data.get(str(idx), [])
 
         for face_data in frame_data:
-            landmarks = face_data.get("landmarks_px", [])
-            if not landmarks:
-                continue
+        pts = np.array(landmarks)[:, :2]
+        if tri is None and len(pts) >= 3:
+            tri = Delaunay(pts)
 
-            pts = np.array(landmarks)[:, :2]  # X,Y seulement
-            try:
-                # Construire Delaunay triangles
-                tri = Delaunay(pts)
-                for simplex in tri.simplices:
-                    pts_tri = pts[simplex].astype(np.int32)
-                    cv2.polylines(overlay_frame, [pts_tri], isClosed=True, color=(0,255,0), thickness=1)
+        if tri is not None:
+            for simplex in tri.simplices:
+                cv2.polylines(
+                    overlay_frame,
+                    [pts[simplex].astype(np.int32)],
+                    True, (0,255,0), 1
+                )
             except Exception as e:
                 # Parfois Delaunay échoue si trop peu de points
                 continue

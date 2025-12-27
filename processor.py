@@ -210,7 +210,6 @@ def process_video(
         if not (shutil.which(colmap_exec) or os.path.isfile(colmap_exec)):
             raise RuntimeError("COLMAP introuvable. Définis $COLMAP_PATH vers colmap.bat/exe.")
         from colmap_utils import extract_frames_from_video, run_colmap_pipeline
-        colmap_exec = r"C:\Users\Dev\Desktop\Test7\colmap-x64-windows-cuda\COLMAP.bat"
         frames_folder = os.path.join(output_parent_folder, date_folder, "FRAMES")
         saved = extract_frames_from_video(video_path, frames_folder, step=colmap_step)
         colmap_out = os.path.join(output_parent_folder, date_folder, "COLMAP")
@@ -361,6 +360,8 @@ def process_video(
 
     # ========== EXPORT FBX (via Blender) ==========
     try:
+        global_scale=0.01,
+        apply_unit_scale=True,
         obj_folder = os.path.join(output_parent_folder, date_folder, "OBJ")
         fbx_path = os.path.join(output_parent_folder, date_folder, f"{video_name}_animated.fbx")
         print("→ Export FBX via Blender…")

@@ -96,18 +96,20 @@ scene.frame_start = 1
 scene.frame_end = len(obj_files)
 scene.render.fps = fps
 
-prev_name = None
-for i in range(len(obj_files)):
-    key_name = f"frame_{i:04d}" if i != 0 else "Basis"
-    kb = obj.data.shape_keys.key_blocks.get(key_name)
-    if kb:
-        kb.value = 1.0
-        kb.keyframe_insert("value", frame=i + 1)
-    if prev_name:
-        prev = obj.data.shape_keys.key_blocks.get(prev_name)
-        if prev:
-            prev.value = 0.0
-            prev.keyframe_insert("value", frame=i + 1)
+# Reset all keys
+for kb in obj.data.shape_keys.key_blocks:
+    kb.value = 0.0
+
+for i in range(1, len(obj_files)):
+    curr = obj.data.shape_keys.key_blocks[f"frame_{i:04d}"]
+    curr.value = 1.0
+    curr.keyframe_insert("value", frame=i + 1)
+
+    if i > 1:
+        prev = obj.data.shape_keys.key_blocks[f"frame_{i-1:04d}"]
+        prev.value = 0.0
+        prev.keyframe_insert("value", frame=i + 1)
+
     prev_name = key_name
 print("✔ Animation created.")
 
