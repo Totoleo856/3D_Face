@@ -109,8 +109,7 @@ for i in range(1, len(obj_files)):
         prev = obj.data.shape_keys.key_blocks[f"frame_{i-1:04d}"]
         prev.value = 0.0
         prev.keyframe_insert("value", frame=i + 1)
-
-    prev_name = key_name
+       
 print("✔ Animation created.")
 
 # ------------------------------
