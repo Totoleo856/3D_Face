@@ -343,47 +343,21 @@ def process_video(
     with open(json_path, "w") as f:
         json.dump(results, f)
 
-    # ========== GENERATE OBJ (Mediapipe faces) ==========
-    for frame_id, frame_data in tqdm(results.items(), desc="Création OBJ", ncols=80):
-        rec = next((r for r in reversed(frame_data) if r["landmarks_px"]), None)
-        if not rec:
-            continue
-        pts = np.array(rec["landmarks_px"], dtype=np.float32)
-        mesh = trimesh.Trimesh(
-            vertices=pts,
-            faces=faces_mp,
-            process=False,
-        )
-        fpath = os.path.join(obj_folder, f"{video_name}_frame_{frame_id:04d}.obj")
-        mesh.export(fpath)
-    print("✓ Traitement terminé et OBJ générés")
+    # ========== GENERATE STATIC OBJ (REFERENCE FRAME) ==========
+ref_frame = next(
+    (f for f in results.values() if f and f[0]["landmarks_px"]),
+    None
+)
 
-    # ========== EXPORT FBX (via Blender) ==========
-    try:
-        global_scale=0.01,
-        apply_unit_scale=True,
-        obj_folder = os.path.join(output_parent_folder, date_folder, "OBJ")
-        fbx_path = os.path.join(output_parent_folder, date_folder, f"{video_name}_animated.fbx")
-        print("→ Export FBX via Blender…")
-        blender_exec = os.environ.get("BLENDER_PATH")
-        if not blender_exec:
-            candidates = [
-                r"C:\\Program Files\\Blender Foundation\\Blender 4.4\\blender.exe",
-                r"C:\\Program Files\\Blender Foundation\\Blender 4.3\\blender.exe",
-                r"C:\\Program Files\\Blender Foundation\\Blender 4.2\\blender.exe",
-                r"C:\\Program Files\\Blender Foundation\\Blender 4.1\\blender.exe",
-            ]
-            blender_exec = next((p for p in candidates if os.path.isfile(p)), "blender")
-        script_abs = str(Path(__file__).parent / "export_fbx.py")
-        subprocess.run([
-            blender_exec,
-            "--background",
-            "--python", script_abs,
-            "--",
-            "--obj_folder", obj_folder,
-            "--fbx_path", fbx_path,
-            "--fps", str(int(fps)),
-        ], check=True)
-        print("✓ FBX animé exporté :", fbx_path)
-    except Exception as e:
-        print("⚠ Erreur export FBX :", e)
+if ref_frame:
+    pts = np.array(ref_frame[0]["landmarks_px"], dtype=np.float32)
+    mesh = trimesh.Trimesh(
+        vertices=pts,
+        faces=faces_mp,
+        process=False,
+    )
+    obj_path = os.path.join(obj_folder, f"{video_name}_reference.obj")
+    mesh.export(obj_path)
+    print("✓ OBJ statique exporté :", obj_path)
+else:
+    print("⚠ Aucun visage détecté pour générer l’OBJ")
