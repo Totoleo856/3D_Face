@@ -4,6 +4,7 @@ import threading
 from processor import process_video
 import overlay_generator  # le script séparé
 
+import os
 
 def browse_video():
     path = filedialog.askopenfilename(filetypes=[("Video files", "*.mp4;*.mov;*.avi")])

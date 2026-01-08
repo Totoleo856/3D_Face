@@ -5,11 +5,15 @@ import numpy as np
 from scipy.spatial import Delaunay
 from tqdm import tqdm
 
+
 def generate_overlay(video_path, output_parent_folder):
     video_name = os.path.splitext(os.path.basename(video_path))[0]
 
     # --- Trouver le dernier dossier date ---
-    date_folders = [d for d in os.listdir(output_parent_folder) if os.path.isdir(os.path.join(output_parent_folder, d))]
+    date_folders = [
+        d for d in os.listdir(output_parent_folder)
+        if os.path.isdir(os.path.join(output_parent_folder, d))
+    ]
     if not date_folders:
         raise FileNotFoundError("Aucun dossier de date trouvé.")
 
@@ -27,13 +31,19 @@ def generate_overlay(video_path, output_parent_folder):
     fps = cap.get(cv2.CAP_PROP_FPS)
     num_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
 
-    overlay_path = os.path.join(output_parent_folder, date_folder, f"{video_name}_overlay.mp4")
+    overlay_path = os.path.join(
+        output_parent_folder,
+        date_folder,
+        f"{video_name}_overlay.mp4"
+    )
     fourcc = cv2.VideoWriter_fourcc(*"mp4v")
     out_vid = cv2.VideoWriter(overlay_path, fourcc, fps, (w, h))
 
     # --- Charger JSON ---
     with open(json_path, "r") as f:
         data = json.load(f)
+
+    tri = None  # cache Delaunay
 
     # --- Parcourir frames ---
     for idx in tqdm(range(num_frames), desc="Création Overlay", ncols=80):
@@ -49,20 +59,31 @@ def generate_overlay(video_path, output_parent_folder):
             if not landmarks:
                 continue
 
-            pts = np.array(landmarks)[:, :2]  # X,Y seulement
-            try:
-                # Construire Delaunay triangles
-                tri = Delaunay(pts)
-                for simplex in tri.simplices:
-                    pts_tri = pts[simplex].astype(np.int32)
-                    cv2.polylines(overlay_frame, [pts_tri], isClosed=True, color=(0,255,0), thickness=1)
-            except Exception as e:
-                # Parfois Delaunay échoue si trop peu de points
-                continue
+            pts = np.array(landmarks, dtype=np.float32)[:, :2]
+
+            # Construire Delaunay UNE seule fois
+            if tri is None:
+                if len(pts) < 3:
+                    continue
+                try:
+                    tri = Delaunay(pts)
+                except Exception:
+                    continue
+
+            # Dessiner triangles
+            for simplex in tri.simplices:
+                pts_tri = pts[simplex].astype(np.int32)
+                cv2.polylines(
+                    overlay_frame,
+                    [pts_tri],
+                    isClosed=True,
+                    color=(0, 255, 0),
+                    thickness=1
+                )
 
         out_vid.write(overlay_frame)
 
     cap.release()
     out_vid.release()
-    print(f"Overlay généré : {overlay_path}")
+    print(f"✔ Overlay généré : {overlay_path}")
     return overlay_path

@@ -48,19 +48,22 @@ def fuse_obj_sequence(
     for i, pc in enumerate(pcs):
         pc.estimate_normals(search_param=o3d.geometry.KDTreeSearchParamHybrid(radius=2.0, max_nn=30))
 
-    # ===== 4. Alignement ICP =====
-    ref_pc = pcs[0]
-    aligned_pcs = [ref_pc]
+    # ===== 4. Alignement ICP (incremental) =====
+aligned_pcs = [pcs[0]]
+prev_pc = pcs[0]
 
-    for i, pc in enumerate(pcs[1:], start=1):
-        if verbose:
-            print(f"→ Alignement ICP frame {i}/{len(pcs)-1}")
-        reg = o3d.pipelines.registration.registration_icp(
-            pc, ref_pc, max_correspondence_distance=icp_distance,
-            estimation_method=o3d.pipelines.registration.TransformationEstimationPointToPoint()
-        )
-        pc.transform(reg.transformation)
-        aligned_pcs.append(pc)
+for i, pc in enumerate(pcs[1:], start=1):
+    if verbose:
+        print(f"→ ICP incrémental {i}/{len(pcs)-1}")
+
+    reg = o3d.pipelines.registration.registration_icp(
+        pc, prev_pc,
+        max_correspondence_distance=icp_distance,
+        estimation_method=o3d.pipelines.registration.TransformationEstimationPointToPoint()
+    )
+    pc.transform(reg.transformation)
+    aligned_pcs.append(pc)
+    prev_pc = pc
 
     # ===== 5. Fusionner tous les nuages =====
     merged_points = np.vstack([np.asarray(pc.points) for pc in aligned_pcs])
@@ -105,7 +108,7 @@ def fuse_obj_sequence(
 
 # ================== Test ==================
 if __name__ == "__main__":
-    fuse_obj_sequence_alternative(
+    fuse_obj_sequence(
         input_folder="samples/objs/",
         output_path="output/fused_face_bpa.obj",
         samples_per_mesh=5000,
